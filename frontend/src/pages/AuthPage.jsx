@@ -1,0 +1,482 @@
+// src/pages/AuthPage.jsx
+// combined login + signup page — matches the design from screenshots
+// left side: branding + hero + stats
+// right side: auth form with sign in / create account tabs
+
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  sendPasswordResetEmail,
+} from 'firebase/auth';
+import { auth, googleProvider } from '../config/firebase';
+import API from '../api/axios';
+
+const UNIVERSITIES = [
+  'FAST-NU Lahore',
+  'FAST-NU Karachi',
+  'FAST-NU Islamabad',
+  'LUMS',
+  'NUST',
+  'UET Lahore',
+  'COMSATS Lahore',
+  'Punjab University',
+  'UMT',
+  'Bahria University',
+  'Air University',
+  'Other',
+];
+
+export default function AuthPage() {
+  const navigate  = useNavigate();
+  const [tab, setTab]     = useState('signin'); // 'signin' | 'signup'
+  const [loading, setLoading] = useState(false);
+  const [error, setError]   = useState('');
+  const [success, setSuccess] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+
+  // signin fields
+  const [siEmail, setSiEmail] = useState('');
+  const [siPass,  setSiPass]  = useState('');
+
+  // signup fields
+  const [role,       setRole]       = useState('student');
+  const [firstName,  setFirstName]  = useState('');
+  const [lastName,   setLastName]   = useState('');
+  const [suEmail,    setSuEmail]    = useState('');
+  const [university, setUniversity] = useState('');
+  const [suPass,     setSuPass]     = useState('');
+  const [phone,      setPhone]      = useState('');
+
+  const clear = () => { setError(''); setSuccess(''); };
+
+  // ── SIGN IN ──────────────────────────────────────────────────────────────
+  const handleSignIn = async (e) => {
+    e.preventDefault();
+    clear();
+    setLoading(true);
+    try {
+      const cred = await signInWithEmailAndPassword(auth, siEmail, siPass);
+      if (!cred.user.emailVerified) {
+        setError('Please verify your email first. Check your inbox.');
+        setLoading(false);
+        return;
+      }
+      const res = await API.post('/auth/login');
+      localStorage.setItem('gg_user', JSON.stringify(res.data.user));
+      navigate('/dashboard');
+    } catch (err) {
+      if (err.code === 'auth/invalid-credential') setError('Wrong email or password.');
+      else if (err.response?.data?.error) setError(err.response.data.error);
+      else setError('Something went wrong. Please try again.');
+    }
+    setLoading(false);
+  };
+
+  // ── FORGOT PASSWORD ───────────────────────────────────────────────────────
+  const handleForgot = async (e) => {
+    e.preventDefault();
+    clear();
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, siEmail);
+      setSuccess('Password reset link sent. Check your inbox.');
+    } catch {
+      setSuccess('If that email exists, a reset link has been sent.');
+    }
+    setLoading(false);
+  };
+
+  // ── SIGN UP ───────────────────────────────────────────────────────────────
+  const handleSignUp = async (e) => {
+    e.preventDefault();
+    clear();
+    if (suPass.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    setLoading(true);
+    try {
+      const cred  = await createUserWithEmailAndPassword(auth, suEmail, suPass);
+      await sendEmailVerification(cred.user);
+
+      const form = new FormData();
+      form.append('fullName',   `${firstName} ${lastName}`.trim());
+      form.append('phone',      phone);
+      form.append('university', university);
+      form.append('role',       role);
+
+      await API.post('/auth/register', form);
+
+      setSuccess('Account created! Check your email for a verification link, then sign in.');
+      setTab('signin');
+      setSiEmail(suEmail);
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') setError('Email already registered. Please sign in.');
+      else if (err.response?.data?.error) setError(err.response.data.error);
+      else setError('Something went wrong. Please try again.');
+    }
+    setLoading(false);
+  };
+
+  // ── GOOGLE ────────────────────────────────────────────────────────────────
+  const handleGoogle = async () => {
+    clear();
+    setLoading(true);
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      const res  = await API.post('/auth/login');
+      localStorage.setItem('gg_user', JSON.stringify(res.data.user));
+      navigate('/dashboard');
+    } catch (err) {
+      if (err.response?.status === 404) {
+        // new google user — needs profile completion
+        navigate('/complete-profile');
+      } else {
+        setError('Google sign-in failed. Please try again.');
+      }
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen flex" style={{ background: '#0f0f0f' }}>
+
+      {/* ── LEFT PANEL ── */}
+      <div className="hidden lg:flex flex-col justify-between w-1/2 p-12"
+        style={{
+          background: 'linear-gradient(135deg, #0f0f0f 0%, #1a1200 50%, #0f0f0f 100%)',
+        }}>
+
+        {/* logo */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+            style={{ background: '#f59e0b' }}>
+            🎓
+          </div>
+          <span className="text-xl font-bold tracking-tight">
+            Grade<span style={{ color: '#f59e0b' }}>&</span>Grind
+          </span>
+        </div>
+
+        {/* hero text */}
+        <div>
+          <div className="inline-block px-4 py-2 rounded-full text-xs font-semibold tracking-widest mb-8"
+            style={{ border: '1px solid #444', color: '#aaa' }}>
+            STUDENT FREELANCING
+          </div>
+          <h1 className="text-6xl font-black leading-none mb-6"
+            style={{ fontFamily: 'system-ui', letterSpacing: '-0.02em' }}>
+            Turn your<br />
+            skills into<br />
+            <span style={{ color: '#f59e0b' }}>income.</span>
+          </h1>
+          <p className="text-lg leading-relaxed max-w-md" style={{ color: '#888' }}>
+            Pakistan's first freelancing platform built exclusively for
+            university students. Find gigs, build your portfolio, and
+            get paid — all around your schedule.
+          </p>
+        </div>
+
+        {/* stats */}
+        <div className="flex gap-12">
+          {[
+            { value: '2.4k+', label: 'Active Students' },
+            { value: '850+',  label: 'Gigs Posted' },
+            { value: '98%',   label: 'Satisfaction' },
+          ].map(stat => (
+            <div key={stat.label}>
+              <div className="text-3xl font-black" style={{ color: '#f59e0b', fontFamily: 'system-ui' }}>
+                {stat.value}
+              </div>
+              <div className="text-sm mt-1" style={{ color: '#666' }}>{stat.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── RIGHT PANEL ── */}
+      <div className="flex-1 flex items-center justify-center p-8"
+        style={{ background: '#111111' }}>
+        <div className="w-full max-w-md">
+
+          {/* welcome text */}
+          <div className="text-center mb-8">
+            <h2 className="text-4xl font-black mb-2"
+              style={{ color: '#222', WebkitTextStroke: '1px #444', letterSpacing: '-0.02em' }}>
+              {tab === 'signin' ? 'Welcome back.' : 'Join the grind.'}
+            </h2>
+            <p style={{ color: '#666', fontSize: '0.9rem' }}>
+              {tab === 'signin'
+                ? 'Sign in to your Grade & Grind account'
+                : 'Create your free student or client account'}
+            </p>
+          </div>
+
+          {/* tabs */}
+          <div className="flex rounded-2xl p-1 mb-8 gap-1"
+            style={{ background: '#1a1a1a', border: '1px solid #2a2a2a' }}>
+            {['signin', 'signup'].map(t => (
+              <button key={t}
+                onClick={() => { setTab(t); clear(); setForgotMode(false); }}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all duration-200"
+                style={{
+                  background: tab === t ? '#f59e0b' : 'transparent',
+                  color:      tab === t ? '#000'    : '#666',
+                }}>
+                {t === 'signin' ? 'Sign In' : 'Create Account'}
+              </button>
+            ))}
+          </div>
+
+          {/* error / success */}
+          {error   && (
+            <div className="mb-4 px-4 py-3 rounded-xl text-sm"
+              style={{ background: '#ff5e7815', border: '1px solid #ff5e7840', color: '#ff8090' }}>
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="mb-4 px-4 py-3 rounded-xl text-sm"
+              style={{ background: '#22d3a515', border: '1px solid #22d3a540', color: '#22d3a5' }}>
+              {success}
+            </div>
+          )}
+
+          {/* ── SIGN IN FORM ── */}
+          {tab === 'signin' && (
+            <form onSubmit={forgotMode ? handleForgot : handleSignIn}>
+              {forgotMode && (
+                <p className="text-sm mb-4" style={{ color: '#888' }}>
+                  Enter your email and we'll send a reset link.
+                </p>
+              )}
+
+              <div className="mb-4">
+                <label className="block text-xs font-semibold tracking-widest mb-2"
+                  style={{ color: '#555' }}>
+                  EMAIL ADDRESS
+                </label>
+                <input type="email" value={siEmail} onChange={e => setSiEmail(e.target.value)}
+                  placeholder="you@university.edu.pk" required
+                  className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
+                  style={{
+                    background: '#1a1a1a', border: '1px solid #2a2a2a',
+                    color: '#fff',
+                  }}
+                  onFocus={e => e.target.style.borderColor = '#f59e0b'}
+                  onBlur={e  => e.target.style.borderColor = '#2a2a2a'}
+                />
+              </div>
+
+              {!forgotMode && (
+                <div className="mb-2">
+                  <label className="block text-xs font-semibold tracking-widest mb-2"
+                    style={{ color: '#555' }}>
+                    PASSWORD
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPass ? 'text' : 'password'}
+                      value={siPass} onChange={e => setSiPass(e.target.value)}
+                      placeholder="Enter your password" required
+                      className="w-full px-4 py-3 rounded-xl text-sm outline-none pr-12"
+                      style={{
+                        background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#fff',
+                      }}
+                      onFocus={e => e.target.style.borderColor = '#f59e0b'}
+                      onBlur={e  => e.target.style.borderColor = '#2a2a2a'}
+                    />
+                    <button type="button" onClick={() => setShowPass(!showPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-lg"
+                      style={{ color: '#555' }}>
+                      {showPass ? '🙈' : '👁'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!forgotMode && (
+                <div className="text-right mb-6">
+                  <button type="button" onClick={() => setForgotMode(true)}
+                    className="text-xs font-semibold"
+                    style={{ color: '#f59e0b' }}>
+                    Forgot password?
+                  </button>
+                </div>
+              )}
+
+              <button type="submit" disabled={loading}
+                className="w-full py-4 rounded-xl font-bold text-base mb-4 transition-all duration-200"
+                style={{
+                  background: loading ? '#d97706' : '#f59e0b',
+                  color: '#000',
+                  opacity: loading ? 0.8 : 1,
+                }}>
+                {loading ? 'Please wait...' : forgotMode ? 'Send Reset Link' : 'Sign In →'}
+              </button>
+
+              {forgotMode && (
+                <button type="button" onClick={() => setForgotMode(false)}
+                  className="w-full py-3 rounded-xl text-sm font-medium"
+                  style={{ background: 'transparent', border: '1px solid #2a2a2a', color: '#666' }}>
+                  ← Back to Sign In
+                </button>
+              )}
+
+              {!forgotMode && (
+                <>
+                  <div className="flex items-center gap-4 my-5">
+                    <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
+                    <span className="text-xs" style={{ color: '#444' }}>or continue with</span>
+                    <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
+                  </div>
+                  <GoogleBtn onClick={handleGoogle} loading={loading} />
+                </>
+              )}
+            </form>
+          )}
+
+          {/* ── SIGN UP FORM ── */}
+          {tab === 'signup' && (
+            <form onSubmit={handleSignUp}>
+
+              {/* role selector */}
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                {[
+                  { value: 'student', icon: '🎓', title: 'Student', desc: 'Find & complete gigs' },
+                  { value: 'client',  icon: '💼', title: 'Client',  desc: 'Post gigs & hire' },
+                ].map(r => (
+                  <button key={r.value} type="button" onClick={() => setRole(r.value)}
+                    className="p-4 rounded-2xl text-center transition-all duration-200"
+                    style={{
+                      background: role === r.value ? '#1a1200' : '#1a1a1a',
+                      border: `1px solid ${role === r.value ? '#f59e0b' : '#2a2a2a'}`,
+                    }}>
+                    <div className="text-2xl mb-2">{r.icon}</div>
+                    <div className="font-bold text-sm"
+                      style={{ color: role === r.value ? '#f59e0b' : '#fff' }}>
+                      {r.title}
+                    </div>
+                    <div className="text-xs mt-1" style={{ color: '#666' }}>{r.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* name row */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="block text-xs font-semibold tracking-widest mb-2"
+                    style={{ color: '#555' }}>FIRST NAME</label>
+                  <Input value={firstName} onChange={e => setFirstName(e.target.value)}
+                    placeholder="Ali" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold tracking-widest mb-2"
+                    style={{ color: '#555' }}>LAST NAME</label>
+                  <Input value={lastName} onChange={e => setLastName(e.target.value)}
+                    placeholder="Khan" required />
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-xs font-semibold tracking-widest mb-2"
+                  style={{ color: '#555' }}>
+                  {role === 'student' ? 'UNIVERSITY EMAIL' : 'EMAIL ADDRESS'}
+                </label>
+                <Input type="email" value={suEmail} onChange={e => setSuEmail(e.target.value)}
+                  placeholder={role === 'student' ? 'you@university.edu.pk' : 'you@company.com'}
+                  required />
+              </div>
+
+              {role === 'student' && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-xs font-semibold tracking-widest mb-2"
+                      style={{ color: '#555' }}>UNIVERSITY</label>
+                    <select value={university} onChange={e => setUniversity(e.target.value)}
+                      required
+                      className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                      style={{
+                        background: '#1a1a1a', border: '1px solid #2a2a2a',
+                        color: university ? '#fff' : '#555',
+                      }}>
+                      <option value="" disabled>Select your university</option>
+                      {UNIVERSITIES.map(u => (
+                        <option key={u} value={u} style={{ background: '#1a1a1a' }}>{u}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-xs font-semibold tracking-widest mb-2"
+                      style={{ color: '#555' }}>PHONE (OPTIONAL)</label>
+                    <Input value={phone} onChange={e => setPhone(e.target.value)}
+                      placeholder="03001234567" />
+                  </div>
+                </>
+              )}
+
+              <div className="mb-6">
+                <label className="block text-xs font-semibold tracking-widest mb-2"
+                  style={{ color: '#555' }}>PASSWORD</label>
+                <div className="relative">
+                  <Input type={showPass ? 'text' : 'password'}
+                    value={suPass} onChange={e => setSuPass(e.target.value)}
+                    placeholder="Min. 8 characters" required />
+                  <button type="button" onClick={() => setShowPass(!showPass)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-lg"
+                    style={{ color: '#555' }}>
+                    {showPass ? '🙈' : '👁'}
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" disabled={loading}
+                className="w-full py-4 rounded-xl font-bold text-base mb-4 transition-all"
+                style={{ background: '#f59e0b', color: '#000', opacity: loading ? 0.8 : 1 }}>
+                {loading ? 'Creating account...' : 'Create Account →'}
+              </button>
+
+              <div className="flex items-center gap-4 my-5">
+                <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
+                <span className="text-xs" style={{ color: '#444' }}>or continue with</span>
+                <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
+              </div>
+
+              <GoogleBtn onClick={handleGoogle} loading={loading} />
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── small components ──
+
+function Input({ type = 'text', value, onChange, placeholder, required }) {
+  return (
+    <input type={type} value={value} onChange={onChange}
+      placeholder={placeholder} required={required}
+      className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
+      style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#fff' }}
+      onFocus={e => e.target.style.borderColor = '#f59e0b'}
+      onBlur={e  => e.target.style.borderColor = '#2a2a2a'}
+    />
+  );
+}
+
+function GoogleBtn({ onClick, loading }) {
+  return (
+    <button type="button" onClick={onClick} disabled={loading}
+      className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-3 transition-all"
+      style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#fff' }}
+      onMouseEnter={e => e.target.style.borderColor = '#444'}
+      onMouseLeave={e => e.target.style.borderColor = '#2a2a2a'}>
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+        width="18" height="18" alt="Google" />
+      Continue with Google
+    </button>
+  );
+}
