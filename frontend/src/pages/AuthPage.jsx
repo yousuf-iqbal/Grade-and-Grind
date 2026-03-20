@@ -1,8 +1,4 @@
 // src/pages/AuthPage.jsx
-// combined login + signup page — matches the design from screenshots
-// left side: branding + hero + stats
-// right side: auth form with sign in / create account tabs
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -31,11 +27,11 @@ const UNIVERSITIES = [
 ];
 
 export default function AuthPage() {
-  const navigate  = useNavigate();
-  const [tab, setTab]     = useState('signin'); // 'signin' | 'signup'
-  const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState('');
-  const [success, setSuccess] = useState('');
+  const navigate = useNavigate();
+  const [tab, setTab]           = useState('signin');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+  const [success, setSuccess]   = useState('');
   const [showPass, setShowPass] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
 
@@ -61,17 +57,25 @@ export default function AuthPage() {
     setLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, siEmail, siPass);
-      if (!cred.user.emailVerified) {
-        setError('Please verify your email first. Check your inbox.');
+
+      // force refresh token so emailVerified reflects latest state
+      await cred.user.reload();
+      const refreshedUser = auth.currentUser;
+
+      if (!refreshedUser.emailVerified) {
+        setError('Please verify your email first. Check your inbox for the verification link.');
         setLoading(false);
         return;
       }
+
       const res = await API.post('/auth/login');
       localStorage.setItem('gg_user', JSON.stringify(res.data.user));
       navigate('/dashboard');
     } catch (err) {
-      if (err.code === 'auth/invalid-credential') setError('Wrong email or password.');
-      else if (err.response?.data?.error) setError(err.response.data.error);
+      if (err.code === 'auth/invalid-credential')  setError('Wrong email or password.');
+      else if (err.code === 'auth/user-not-found') setError('No account found with this email.');
+      else if (err.code === 'auth/too-many-requests') setError('Too many failed attempts. Try again later.');
+      else if (err.response?.data?.error)          setError(err.response.data.error);
       else setError('Something went wrong. Please try again.');
     }
     setLoading(false);
@@ -81,6 +85,9 @@ export default function AuthPage() {
   const handleForgot = async (e) => {
     e.preventDefault();
     clear();
+    if (!siEmail) { setError('Please enter your email address.'); return; }
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(siEmail)) { setError('Please enter a valid email address.'); return; }
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, siEmail);
@@ -95,15 +102,71 @@ export default function AuthPage() {
   const handleSignUp = async (e) => {
     e.preventDefault();
     clear();
-    if (suPass.length < 8) { setError('Password must be at least 8 characters.'); return; }
+
+    // name validation
+    if (firstName.trim().length < 2) {
+      setError('First name must be at least 2 characters.'); return;
+    }
+    if (lastName.trim().length < 2) {
+      setError('Last name must be at least 2 characters.'); return;
+    }
+    if (!/^[a-zA-Z\s]+$/.test(firstName)) {
+      setError('First name can only contain letters.'); return;
+    }
+    if (!/^[a-zA-Z\s]+$/.test(lastName)) {
+      setError('Last name can only contain letters.'); return;
+    }
+
+    // email validation
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(suEmail)) {
+      setError('Please enter a valid email address (e.g. you@gmail.com).'); return;
+    }
+    const blockedDomains = ['test.com', 'fake.com', 'temp.com', 'example.com', 'mailinator.com'];
+    const emailDomain = suEmail.split('@')[1]?.toLowerCase();
+    if (blockedDomains.includes(emailDomain)) {
+      setError('Please use a real email address.'); return;
+    }
+    // email must have at least one character before @ and valid domain
+    const [localPart] = suEmail.split('@');
+    if (localPart.length < 2) {
+      setError('Please enter a valid email address.'); return;
+    }
+
+    // phone validation — only if provided
+    if (phone.trim()) {
+      if (!/^03\d{9}$/.test(phone.trim())) {
+        setError('Phone must be exactly 11 digits and start with 03. Example: 03001234567'); return;
+      }
+    }
+
+    // university required for students
+    if (role === 'student' && !university) {
+      setError('Please select your university.'); return;
+    }
+
+    // password validation
+    if (suPass.length < 8) {
+      setError('Password must be at least 8 characters.'); return;
+    }
+    if (!/[A-Z]/.test(suPass)) {
+      setError('Password must contain at least one uppercase letter.'); return;
+    }
+    if (!/[0-9]/.test(suPass)) {
+      setError('Password must contain at least one number.'); return;
+    }
+    if (/\s/.test(suPass)) {
+      setError('Password cannot contain spaces.'); return;
+    }
+
     setLoading(true);
     try {
-      const cred  = await createUserWithEmailAndPassword(auth, suEmail, suPass);
+      const cred = await createUserWithEmailAndPassword(auth, suEmail, suPass);
       await sendEmailVerification(cred.user);
 
       const form = new FormData();
-      form.append('fullName',   `${firstName} ${lastName}`.trim());
-      form.append('phone',      phone);
+      form.append('fullName',   `${firstName.trim()} ${lastName.trim()}`);
+      form.append('phone',      phone.trim());
       form.append('university', university);
       form.append('role',       role);
 
@@ -112,9 +175,14 @@ export default function AuthPage() {
       setSuccess('Account created! Check your email for a verification link, then sign in.');
       setTab('signin');
       setSiEmail(suEmail);
+      // reset signup fields
+      setFirstName(''); setLastName(''); setSuEmail('');
+      setUniversity(''); setSuPass(''); setPhone('');
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') setError('Email already registered. Please sign in.');
-      else if (err.response?.data?.error) setError(err.response.data.error);
+      else if (err.code === 'auth/invalid-email')   setError('Invalid email format.');
+      else if (err.code === 'auth/weak-password')   setError('Password is too weak. Try a stronger one.');
+      else if (err.response?.data?.error)           setError(err.response.data.error);
       else setError('Something went wrong. Please try again.');
     }
     setLoading(false);
@@ -125,14 +193,15 @@ export default function AuthPage() {
     clear();
     setLoading(true);
     try {
-      const cred = await signInWithPopup(auth, googleProvider);
-      const res  = await API.post('/auth/login');
+      await signInWithPopup(auth, googleProvider);
+      const res = await API.post('/auth/login');
       localStorage.setItem('gg_user', JSON.stringify(res.data.user));
       navigate('/dashboard');
     } catch (err) {
       if (err.response?.status === 404) {
-        // new google user — needs profile completion
         navigate('/complete-profile');
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError('Google sign-in was cancelled.');
       } else {
         setError('Google sign-in failed. Please try again.');
       }
@@ -140,14 +209,20 @@ export default function AuthPage() {
     setLoading(false);
   };
 
+  // password strength checks
+  const passChecks = [
+    { check: suPass.length >= 8,   label: '8+ chars' },
+    { check: /[A-Z]/.test(suPass), label: 'Uppercase' },
+    { check: /[0-9]/.test(suPass), label: 'Number' },
+    { check: !/\s/.test(suPass) && suPass.length > 0, label: 'No spaces' },
+  ];
+
   return (
     <div className="min-h-screen flex" style={{ background: '#0f0f0f' }}>
 
       {/* ── LEFT PANEL ── */}
       <div className="hidden lg:flex flex-col justify-between w-1/2 p-12"
-        style={{
-          background: 'linear-gradient(135deg, #0f0f0f 0%, #1a1200 50%, #0f0f0f 100%)',
-        }}>
+        style={{ background: 'linear-gradient(135deg, #0f0f0f 0%, #1a1200 50%, #0f0f0f 100%)' }}>
 
         {/* logo */}
         <div className="flex items-center gap-3">
@@ -160,16 +235,15 @@ export default function AuthPage() {
           </span>
         </div>
 
-        {/* hero text */}
+        {/* hero */}
         <div>
           <div className="inline-block px-4 py-2 rounded-full text-xs font-semibold tracking-widest mb-8"
             style={{ border: '1px solid #444', color: '#aaa' }}>
             STUDENT FREELANCING
           </div>
           <h1 className="text-6xl font-black leading-none mb-6"
-            style={{ fontFamily: 'system-ui', letterSpacing: '-0.02em' }}>
-            Turn your<br />
-            skills into<br />
+            style={{ letterSpacing: '-0.02em' }}>
+            Turn your<br />skills into<br />
             <span style={{ color: '#f59e0b' }}>income.</span>
           </h1>
           <p className="text-lg leading-relaxed max-w-md" style={{ color: '#888' }}>
@@ -185,23 +259,21 @@ export default function AuthPage() {
             { value: '2.4k+', label: 'Active Students' },
             { value: '850+',  label: 'Gigs Posted' },
             { value: '98%',   label: 'Satisfaction' },
-          ].map(stat => (
-            <div key={stat.label}>
-              <div className="text-3xl font-black" style={{ color: '#f59e0b', fontFamily: 'system-ui' }}>
-                {stat.value}
-              </div>
-              <div className="text-sm mt-1" style={{ color: '#666' }}>{stat.label}</div>
+          ].map(s => (
+            <div key={s.label}>
+              <div className="text-3xl font-black" style={{ color: '#f59e0b' }}>{s.value}</div>
+              <div className="text-sm mt-1" style={{ color: '#666' }}>{s.label}</div>
             </div>
           ))}
         </div>
       </div>
 
       {/* ── RIGHT PANEL ── */}
-      <div className="flex-1 flex items-center justify-center p-8"
+      <div className="flex-1 flex items-center justify-center p-8 overflow-y-auto"
         style={{ background: '#111111' }}>
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-md py-8">
 
-          {/* welcome text */}
+          {/* heading */}
           <div className="text-center mb-8">
             <h2 className="text-4xl font-black mb-2"
               style={{ color: '#222', WebkitTextStroke: '1px #444', letterSpacing: '-0.02em' }}>
@@ -230,8 +302,8 @@ export default function AuthPage() {
             ))}
           </div>
 
-          {/* error / success */}
-          {error   && (
+          {/* alerts */}
+          {error && (
             <div className="mb-4 px-4 py-3 rounded-xl text-sm"
               style={{ background: '#ff5e7815', border: '1px solid #ff5e7840', color: '#ff8090' }}>
               {error}
@@ -244,50 +316,30 @@ export default function AuthPage() {
             </div>
           )}
 
-          {/* ── SIGN IN FORM ── */}
+          {/* ── SIGN IN ── */}
           {tab === 'signin' && (
             <form onSubmit={forgotMode ? handleForgot : handleSignIn}>
               {forgotMode && (
                 <p className="text-sm mb-4" style={{ color: '#888' }}>
-                  Enter your email and we'll send a reset link.
+                  Enter your email and we'll send a password reset link.
                 </p>
               )}
 
               <div className="mb-4">
                 <label className="block text-xs font-semibold tracking-widest mb-2"
-                  style={{ color: '#555' }}>
-                  EMAIL ADDRESS
-                </label>
-                <input type="email" value={siEmail} onChange={e => setSiEmail(e.target.value)}
-                  placeholder="you@university.edu.pk" required
-                  className="w-full px-4 py-3 rounded-xl text-sm outline-none transition-all"
-                  style={{
-                    background: '#1a1a1a', border: '1px solid #2a2a2a',
-                    color: '#fff',
-                  }}
-                  onFocus={e => e.target.style.borderColor = '#f59e0b'}
-                  onBlur={e  => e.target.style.borderColor = '#2a2a2a'}
-                />
+                  style={{ color: '#555' }}>EMAIL ADDRESS</label>
+                <InputField type="email" value={siEmail} onChange={e => setSiEmail(e.target.value)}
+                  placeholder="you@university.edu.pk" required />
               </div>
 
               {!forgotMode && (
                 <div className="mb-2">
                   <label className="block text-xs font-semibold tracking-widest mb-2"
-                    style={{ color: '#555' }}>
-                    PASSWORD
-                  </label>
+                    style={{ color: '#555' }}>PASSWORD</label>
                   <div className="relative">
-                    <input
-                      type={showPass ? 'text' : 'password'}
+                    <InputField type={showPass ? 'text' : 'password'}
                       value={siPass} onChange={e => setSiPass(e.target.value)}
-                      placeholder="Enter your password" required
-                      className="w-full px-4 py-3 rounded-xl text-sm outline-none pr-12"
-                      style={{
-                        background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#fff',
-                      }}
-                      onFocus={e => e.target.style.borderColor = '#f59e0b'}
-                      onBlur={e  => e.target.style.borderColor = '#2a2a2a'}
-                    />
+                      placeholder="Enter your password" required />
                     <button type="button" onClick={() => setShowPass(!showPass)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-lg"
                       style={{ color: '#555' }}>
@@ -299,46 +351,35 @@ export default function AuthPage() {
 
               {!forgotMode && (
                 <div className="text-right mb-6">
-                  <button type="button" onClick={() => setForgotMode(true)}
-                    className="text-xs font-semibold"
-                    style={{ color: '#f59e0b' }}>
+                  <button type="button" onClick={() => { setForgotMode(true); clear(); }}
+                    className="text-xs font-semibold" style={{ color: '#f59e0b' }}>
                     Forgot password?
                   </button>
                 </div>
               )}
 
               <button type="submit" disabled={loading}
-                className="w-full py-4 rounded-xl font-bold text-base mb-4 transition-all duration-200"
-                style={{
-                  background: loading ? '#d97706' : '#f59e0b',
-                  color: '#000',
-                  opacity: loading ? 0.8 : 1,
-                }}>
+                className="w-full py-4 rounded-xl font-bold text-base mb-4 transition-all"
+                style={{ background: '#f59e0b', color: '#000', opacity: loading ? 0.8 : 1 }}>
                 {loading ? 'Please wait...' : forgotMode ? 'Send Reset Link' : 'Sign In →'}
               </button>
 
-              {forgotMode && (
-                <button type="button" onClick={() => setForgotMode(false)}
+              {forgotMode ? (
+                <button type="button" onClick={() => { setForgotMode(false); clear(); }}
                   className="w-full py-3 rounded-xl text-sm font-medium"
                   style={{ background: 'transparent', border: '1px solid #2a2a2a', color: '#666' }}>
                   ← Back to Sign In
                 </button>
-              )}
-
-              {!forgotMode && (
+              ) : (
                 <>
-                  <div className="flex items-center gap-4 my-5">
-                    <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
-                    <span className="text-xs" style={{ color: '#444' }}>or continue with</span>
-                    <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
-                  </div>
+                  <Divider />
                   <GoogleBtn onClick={handleGoogle} loading={loading} />
                 </>
               )}
             </form>
           )}
 
-          {/* ── SIGN UP FORM ── */}
+          {/* ── SIGN UP ── */}
           {tab === 'signup' && (
             <form onSubmit={handleSignUp}>
 
@@ -364,32 +405,34 @@ export default function AuthPage() {
                 ))}
               </div>
 
-              {/* name row */}
+              {/* name */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div>
                   <label className="block text-xs font-semibold tracking-widest mb-2"
                     style={{ color: '#555' }}>FIRST NAME</label>
-                  <Input value={firstName} onChange={e => setFirstName(e.target.value)}
+                  <InputField value={firstName} onChange={e => setFirstName(e.target.value)}
                     placeholder="Ali" required />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold tracking-widest mb-2"
                     style={{ color: '#555' }}>LAST NAME</label>
-                  <Input value={lastName} onChange={e => setLastName(e.target.value)}
+                  <InputField value={lastName} onChange={e => setLastName(e.target.value)}
                     placeholder="Khan" required />
                 </div>
               </div>
 
+              {/* email */}
               <div className="mb-4">
                 <label className="block text-xs font-semibold tracking-widest mb-2"
                   style={{ color: '#555' }}>
                   {role === 'student' ? 'UNIVERSITY EMAIL' : 'EMAIL ADDRESS'}
                 </label>
-                <Input type="email" value={suEmail} onChange={e => setSuEmail(e.target.value)}
-                  placeholder={role === 'student' ? 'you@university.edu.pk' : 'you@company.com'}
+                <InputField type="email" value={suEmail} onChange={e => setSuEmail(e.target.value)}
+                  placeholder={role === 'student' ? 'you@lhr.nu.edu.pk' : 'you@company.com'}
                   required />
               </div>
 
+              {/* student-only fields */}
               {role === 'student' && (
                 <>
                   <div className="mb-4">
@@ -408,20 +451,29 @@ export default function AuthPage() {
                       ))}
                     </select>
                   </div>
+
                   <div className="mb-4">
                     <label className="block text-xs font-semibold tracking-widest mb-2"
-                      style={{ color: '#555' }}>PHONE (OPTIONAL)</label>
-                    <Input value={phone} onChange={e => setPhone(e.target.value)}
+                      style={{ color: '#555' }}>
+                      PHONE <span style={{ color: '#444', fontWeight: 400 }}>(OPTIONAL)</span>
+                    </label>
+                    <InputField value={phone} onChange={e => setPhone(e.target.value)}
                       placeholder="03001234567" />
+                    {phone && !/^03\d{9}$/.test(phone) && (
+                      <p className="text-xs mt-1" style={{ color: '#ff8090' }}>
+                        Must be 11 digits starting with 03
+                      </p>
+                    )}
                   </div>
                 </>
               )}
 
+              {/* password */}
               <div className="mb-6">
                 <label className="block text-xs font-semibold tracking-widest mb-2"
                   style={{ color: '#555' }}>PASSWORD</label>
                 <div className="relative">
-                  <Input type={showPass ? 'text' : 'password'}
+                  <InputField type={showPass ? 'text' : 'password'}
                     value={suPass} onChange={e => setSuPass(e.target.value)}
                     placeholder="Min. 8 characters" required />
                   <button type="button" onClick={() => setShowPass(!showPass)}
@@ -430,6 +482,21 @@ export default function AuthPage() {
                     {showPass ? '🙈' : '👁'}
                   </button>
                 </div>
+                {/* live strength indicators */}
+                {suPass.length > 0 && (
+                  <div className="mt-2 flex gap-2 flex-wrap">
+                    {passChecks.map(({ check, label }) => (
+                      <span key={label} className="text-xs px-2 py-0.5 rounded-full"
+                        style={{
+                          background: check ? '#22d3a515' : '#ff5e7815',
+                          color:      check ? '#22d3a5'   : '#ff8090',
+                          border:     `1px solid ${check ? '#22d3a530' : '#ff5e7830'}`,
+                        }}>
+                        {check ? '✓' : '✗'} {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <button type="submit" disabled={loading}
@@ -438,12 +505,7 @@ export default function AuthPage() {
                 {loading ? 'Creating account...' : 'Create Account →'}
               </button>
 
-              <div className="flex items-center gap-4 my-5">
-                <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
-                <span className="text-xs" style={{ color: '#444' }}>or continue with</span>
-                <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
-              </div>
-
+              <Divider />
               <GoogleBtn onClick={handleGoogle} loading={loading} />
             </form>
           )}
@@ -453,9 +515,9 @@ export default function AuthPage() {
   );
 }
 
-// ── small components ──
+// ── reusable components ──────────────────────────────────────────────────────
 
-function Input({ type = 'text', value, onChange, placeholder, required }) {
+function InputField({ type = 'text', value, onChange, placeholder, required }) {
   return (
     <input type={type} value={value} onChange={onChange}
       placeholder={placeholder} required={required}
@@ -467,13 +529,23 @@ function Input({ type = 'text', value, onChange, placeholder, required }) {
   );
 }
 
+function Divider() {
+  return (
+    <div className="flex items-center gap-4 my-5">
+      <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
+      <span className="text-xs" style={{ color: '#444' }}>or continue with</span>
+      <div className="flex-1 h-px" style={{ background: '#2a2a2a' }} />
+    </div>
+  );
+}
+
 function GoogleBtn({ onClick, loading }) {
   return (
     <button type="button" onClick={onClick} disabled={loading}
       className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-3 transition-all"
       style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#fff' }}
-      onMouseEnter={e => e.target.style.borderColor = '#444'}
-      onMouseLeave={e => e.target.style.borderColor = '#2a2a2a'}>
+      onMouseEnter={e => e.currentTarget.style.borderColor = '#444'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = '#2a2a2a'}>
       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
         width="18" height="18" alt="Google" />
       Continue with Google
