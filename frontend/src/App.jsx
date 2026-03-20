@@ -2,6 +2,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import AuthPage from './pages/AuthPage';
+import StudentProfilePage from './pages/StudentProfilePage';
+import StudentPublicProfilePage from './pages/StudentPublicProfilePage';
 
 // placeholder dashboard — replace with real dashboard later
 function Dashboard() {
@@ -20,6 +22,16 @@ function Dashboard() {
           <p style={{ color: '#666', fontSize: '0.9rem' }}>
             Role: <span style={{ color: '#f59e0b' }}>{user.role}</span>
           </p>
+          {user.role === 'student' && (
+            <a href="/profile/edit"
+              style={{
+                padding: '0.5rem 1.25rem', background: '#f59e0b',
+                borderRadius: '8px', color: '#000', fontWeight: 700,
+                textDecoration: 'none', fontSize: '0.9rem',
+              }}>
+              My Profile
+            </a>
+          )}
           <button
             onClick={() => {
               import('firebase/auth').then(({ getAuth, signOut }) => {
@@ -29,9 +41,10 @@ function Dashboard() {
               });
             }}
             style={{
-              padding: '0.6rem 1.5rem', background: '#f59e0b',
-              border: 'none', borderRadius: '8px',
-              color: '#000', fontWeight: 700, cursor: 'pointer',
+              padding: '0.6rem 1.5rem', background: 'transparent',
+              border: '1px solid #2a2a2a',
+              borderRadius: '8px',
+              color: '#aaa', fontWeight: 700, cursor: 'pointer',
             }}>
             Logout
           </button>
@@ -41,10 +54,14 @@ function Dashboard() {
   );
 }
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
   if (loading) return null;
-  return user ? children : <Navigate to="/auth" />;
+  if (!user) return <Navigate to="/auth" />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/dashboard" />;
+  }
+  return children;
 }
 
 export default function App() {
@@ -52,10 +69,26 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/auth"      element={<AuthPage />} />
+          <Route path="/auth" element={<AuthPage />} />
+
           <Route path="/dashboard" element={
             <ProtectedRoute><Dashboard /></ProtectedRoute>
           } />
+
+          {/* student edits their own profile */}
+          <Route path="/profile/edit" element={
+            <ProtectedRoute allowedRoles={['student']}>
+              <StudentProfilePage />
+            </ProtectedRoute>
+          } />
+
+          {/* public profile view — any logged in user */}
+          <Route path="/profile/:userID" element={
+            <ProtectedRoute>
+              <StudentPublicProfilePage />
+            </ProtectedRoute>
+          } />
+
           <Route path="*" element={<Navigate to="/auth" />} />
         </Routes>
       </BrowserRouter>

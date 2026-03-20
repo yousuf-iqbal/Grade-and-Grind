@@ -6,6 +6,7 @@ require('dotenv').config();
 require('./config/db');
 
 const authRoutes = require('./features/auth/authRoutes');
+const profileRoutes = require('./features/studentProfile/studProfRoutes');
 
 // future routes — uncomment as each feature is built:
 // const gigRoutes         = require('./features/gigs/gigRoutes');
@@ -21,6 +22,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/profile', profileRoutes);
 
 // app.use('/api/gigs',         gigRoutes);
 // app.use('/api/applications', applicationRoutes);

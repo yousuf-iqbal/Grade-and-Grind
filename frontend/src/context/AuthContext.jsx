@@ -10,22 +10,25 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser && firebaseUser.emailVerified) {
-        try {
-          const res = await API.post('/auth/login');
-          setUser(res.data.user);
-        } catch {
-          setUser(null);
-        }
-      } else {
+ useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    if (firebaseUser && firebaseUser.emailVerified) {
+      try {
+        const token = await firebaseUser.getIdToken();
+        const res = await API.post('/auth/login', {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setUser(res.data.user);
+      } catch {
         setUser(null);
       }
-      setLoading(false);
-    });
-    return unsubscribe;
-  }, []);
+    } else {
+      setUser(null);
+    }
+    setLoading(false);
+  });
+  return unsubscribe;
+}, []);
 
   return (
     <AuthContext.Provider value={{ user, setUser, loading }}>
