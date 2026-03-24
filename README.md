@@ -16,11 +16,11 @@ A web based freelancing platform for university students, connecting them with c
 ## How to Run
 
 ### Backend
-cd backend
-npm install
-node server.js
+- cd backend
+- npm install
+- node server.js
 
 ### Frontend
-cd frontend
-npm install
-npm run dev
+- cd frontend
+- npm install
+- npm run dev
