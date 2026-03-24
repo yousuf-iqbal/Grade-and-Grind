@@ -2,51 +2,60 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import AuthPage from './pages/AuthPage';
+import StudentDashboard from './pages/StudentDashboard';
+import ClientDashboard from './pages/ClientDashboard';
 
-// placeholder dashboard — replace with real dashboard later
-function Dashboard() {
-  const { user } = useAuth();
+// ─── PROTECTED ROUTE ─────────────────────────────────────────────────────────
+// redirects to /auth if not logged in
+// redirects to /dashboard which then routes by role
+
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  return user ? children : <Navigate to="/auth" replace />;
+}
+
+// ─── DASHBOARD ROUTER ─────────────────────────────────────────────────────────
+// renders the correct dashboard based on user role
+
+function DashboardRouter() {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth" replace />;
+
+  if (user.role === 'student') return <StudentDashboard />;
+  if (user.role === 'client')  return <ClientDashboard />;
+
+  // admin — placeholder for now
   return (
-    <div style={{
-      minHeight: '100vh', background: '#0f0f0f', color: '#fff',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexDirection: 'column', gap: '1rem', fontFamily: 'system-ui',
-    }}>
-      <div style={{ fontSize: '2rem' }}>🎓</div>
-      <h1 style={{ color: '#f59e0b', fontSize: '1.5rem', fontWeight: 800 }}>Grade & Grind</h1>
-      {user && (
-        <>
-          <p>Welcome, <strong>{user.fullName}</strong>!</p>
-          <p style={{ color: '#666', fontSize: '0.9rem' }}>
-            Role: <span style={{ color: '#f59e0b' }}>{user.role}</span>
-          </p>
-          <button
-            onClick={() => {
-              import('firebase/auth').then(({ getAuth, signOut }) => {
-                signOut(getAuth());
-                localStorage.removeItem('gg_user');
-                window.location.href = '/auth';
-              });
-            }}
-            style={{
-              padding: '0.6rem 1.5rem', background: '#f59e0b',
-              border: 'none', borderRadius: '8px',
-              color: '#000', fontWeight: 700, cursor: 'pointer',
-            }}>
-            Logout
-          </button>
-        </>
-      )}
+    <div style={{ minHeight: '100vh', background: '#0a0a0a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🛡️</div>
+        <h2 style={{ color: '#f59e0b' }}>Admin Panel</h2>
+        <p style={{ color: '#666' }}>Coming soon.</p>
+      </div>
     </div>
   );
 }
 
-function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return null;
-  return user ? children : <Navigate to="/auth" />;
+// ─── LOADING SCREEN ───────────────────────────────────────────────────────────
+function LoadingScreen() {
+  return (
+    <div style={{
+      minHeight: '100vh', background: '#0a0a0a',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        width: 40, height: 40,
+        border: '3px solid #222', borderTop: '3px solid #f59e0b',
+        borderRadius: '50%', animation: 'spin 0.8s linear infinite',
+      }} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
 }
 
+// ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <AuthProvider>
@@ -54,9 +63,9 @@ export default function App() {
         <Routes>
           <Route path="/auth"      element={<AuthPage />} />
           <Route path="/dashboard" element={
-            <ProtectedRoute><Dashboard /></ProtectedRoute>
+            <ProtectedRoute><DashboardRouter /></ProtectedRoute>
           } />
-          <Route path="*" element={<Navigate to="/auth" />} />
+          <Route path="*" element={<Navigate to="/auth" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
