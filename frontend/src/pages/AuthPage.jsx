@@ -10,6 +10,7 @@ import {
   signOut,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../config/firebase';
+import { useAuth } from '../context/AuthContext';
 import API from '../api/axios';
 
 const UNIVERSITIES = [
@@ -18,8 +19,24 @@ const UNIVERSITIES = [
   'Punjab University', 'UMT', 'Bahria University', 'Air University', 'Other',
 ];
 
+function getPasswordStrength(pass) {
+  if (!pass) return { score: 0, label: '', color: '' };
+  let score = 0;
+  if (pass.length >= 8)             score++;
+  if (/[a-z]/.test(pass))          score++;
+  if (/[A-Z]/.test(pass))          score++;
+  if (/[0-9]/.test(pass))          score++;
+  if (/[^a-zA-Z0-9\s]/.test(pass)) score++;
+  if (score <= 2) return { score, label: 'Weak',   color: '#f87171' };
+  if (score === 3) return { score, label: 'Fair',   color: '#fbbf24' };
+  if (score === 4) return { score, label: 'Good',   color: '#34d399' };
+  return              { score, label: 'Strong', color: '#4ade80' };
+}
+
 export default function AuthPage() {
-  const navigate = useNavigate();
+  const navigate                           = useNavigate();
+  const { setUser, manualLoginInProgressRef: manualLoginInProgress } = useAuth();
+
   const [tab,        setTab]        = useState('signin');
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState('');
@@ -27,11 +44,9 @@ export default function AuthPage() {
   const [showPass,   setShowPass]   = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
 
-  // signin
   const [siEmail, setSiEmail] = useState('');
   const [siPass,  setSiPass]  = useState('');
 
-  // signup
   const [role,       setRole]       = useState('student');
   const [firstName,  setFirstName]  = useState('');
   const [lastName,   setLastName]   = useState('');
@@ -42,26 +57,32 @@ export default function AuthPage() {
 
   const clear = () => { setError(''); setSuccess(''); };
 
-  // ── SIGN IN ────────────────────────────────────────────────────────────────
+  // ── SIGN IN ───────────────────────────────────────────────────────────────
   const handleSignIn = async (e) => {
-    e.preventDefault();
-    clear();
+    e.preventDefault(); clear();
     setLoading(true);
+    manualLoginInProgress.current = true;
     try {
       const cred = await signInWithEmailAndPassword(auth, siEmail, siPass);
 
-      // reload to get latest emailVerified state
-      await cred.user.reload();
-      const freshUser = auth.currentUser;
+      let verified = false;
+      for (let i = 0; i < 3; i++) {
+        await cred.user.reload();
+        if (auth.currentUser?.emailVerified) { verified = true; break; }
+        await new Promise(r => setTimeout(r, 800));
+      }
 
-      if (!freshUser.emailVerified) {
-        setError('Please verify your email first. Check your inbox for the verification link.');
-        await signOut(auth); // sign out unverified user
+      if (!verified) {
+        setError('Please verify your email first. Check your inbox.');
+        await signOut(auth);
         setLoading(false);
+        manualLoginInProgress.current = false;
         return;
       }
 
+      await auth.currentUser.getIdToken(true);
       const res = await API.post('/auth/login');
+      setUser(res.data.user);
       localStorage.setItem('gg_user', JSON.stringify(res.data.user));
       navigate('/dashboard');
     } catch (err) {
@@ -72,62 +93,55 @@ export default function AuthPage() {
       else setError('Something went wrong. Please try again.');
     }
     setLoading(false);
+    manualLoginInProgress.current = false;
   };
 
-  // ── FORGOT PASSWORD ────────────────────────────────────────────────────────
+  // ── FORGOT PASSWORD ───────────────────────────────────────────────────────
   const handleForgot = async (e) => {
-    e.preventDefault();
-    clear();
+    e.preventDefault(); clear();
     if (!siEmail) { setError('Please enter your email address.'); return; }
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, siEmail);
       setSuccess('Password reset link sent. Check your inbox.');
     } catch {
-      // always show success to prevent email enumeration
       setSuccess('If that email exists, a reset link has been sent.');
     }
     setLoading(false);
   };
 
-  // ── SIGN UP ────────────────────────────────────────────────────────────────
+  // ── SIGN UP ───────────────────────────────────────────────────────────────
   const handleSignUp = async (e) => {
-    e.preventDefault();
-    clear();
+    e.preventDefault(); clear();
 
-    if (firstName.trim().length < 2)      { setError('First name must be at least 2 characters.'); return; }
-    if (lastName.trim().length < 2)       { setError('Last name must be at least 2 characters.'); return; }
-    if (!/^[a-zA-Z\s]+$/.test(firstName)) { setError('First name can only contain letters.'); return; }
-    if (!/^[a-zA-Z\s]+$/.test(lastName))  { setError('Last name can only contain letters.'); return; }
+    if (firstName.trim().length < 2)       { setError('First name must be at least 2 characters.'); return; }
+    if (lastName.trim().length < 2)        { setError('Last name must be at least 2 characters.'); return; }
+    if (!/^[a-zA-Z\s]+$/.test(firstName))  { setError('First name can only contain letters.'); return; }
+    if (!/^[a-zA-Z\s]+$/.test(lastName))   { setError('Last name can only contain letters.'); return; }
 
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!emailRegex.test(suEmail))        { setError('Please enter a valid email address.'); return; }
+    if (!emailRegex.test(suEmail)) { setError('Please enter a valid email address.'); return; }
 
     const blockedDomains = ['test.com', 'fake.com', 'temp.com', 'example.com', 'mailinator.com'];
     if (blockedDomains.includes(suEmail.split('@')[1]?.toLowerCase())) {
       setError('Please use a real email address.'); return;
     }
-
     if (phone.trim() && !/^03\d{9}$/.test(phone.trim())) {
-      setError('Phone must be exactly 11 digits and start with 03. Example: 03001234567'); return;
+      setError('Phone must be exactly 11 digits starting with 03.'); return;
     }
-
     if (role === 'student' && !university) { setError('Please select your university.'); return; }
-
-    if (suPass.length < 8)            { setError('Password must be at least 8 characters.'); return; }
-    if (!/[A-Z]/.test(suPass))        { setError('Password must contain at least one uppercase letter.'); return; }
-    if (!/[0-9]/.test(suPass))        { setError('Password must contain at least one number.'); return; }
-    if (/\s/.test(suPass))            { setError('Password cannot contain spaces.'); return; }
+    if (suPass.length < 8)                { setError('Password must be at least 8 characters.'); return; }
+    if (!/[a-z]/.test(suPass))            { setError('Password must contain at least one lowercase letter.'); return; }
+    if (!/[A-Z]/.test(suPass))            { setError('Password must contain at least one uppercase letter.'); return; }
+    if (!/[0-9]/.test(suPass))            { setError('Password must contain at least one number.'); return; }
+    if (!/[^a-zA-Z0-9\s]/.test(suPass))   { setError('Password must contain at least one special character (e.g. !@#$).'); return; }
+    if (/\s/.test(suPass))                { setError('Password cannot contain spaces.'); return; }
 
     setLoading(true);
     try {
-      // 1. create firebase account
       const cred = await createUserWithEmailAndPassword(auth, suEmail, suPass);
-
-      // 2. send verification email
       await sendEmailVerification(cred.user);
 
-      // 3. save profile to our database (token is auto-attached by axios interceptor)
       const form = new FormData();
       form.append('fullName',   `${firstName.trim()} ${lastName.trim()}`);
       form.append('phone',      phone.trim());
@@ -135,62 +149,71 @@ export default function AuthPage() {
       form.append('role',       role);
 
       await API.post('/auth/register', form);
-
-      // 4. IMPORTANT: sign out immediately — user must verify email before logging in
-      //    this prevents AuthContext from trying to call /auth/login with unverified email
       await signOut(auth);
 
-      // 5. show success + switch to sign in tab
       setSuccess('Account created! Check your email for a verification link, then sign in.');
       setTab('signin');
       setSiEmail(suEmail);
-
-      // reset signup fields
       setFirstName(''); setLastName(''); setSuEmail('');
       setUniversity(''); setSuPass(''); setPhone('');
 
     } catch (err) {
-      // if our backend failed but firebase account was created, clean it up
       if (auth.currentUser) {
         try { await auth.currentUser.delete(); } catch { /* ignore */ }
       }
-
       if (err.code === 'auth/email-already-in-use') setError('Email already registered. Please sign in.');
       else if (err.code === 'auth/invalid-email')   setError('Invalid email format.');
-      else if (err.code === 'auth/weak-password')   setError('Password is too weak. Try a stronger one.');
+      else if (err.code === 'auth/weak-password')   setError('Password is too weak.');
       else if (err.response?.data?.error)           setError(err.response.data.error);
       else setError('Something went wrong. Please try again.');
     }
     setLoading(false);
   };
 
-  // ── GOOGLE ─────────────────────────────────────────────────────────────────
+  // ── GOOGLE ────────────────────────────────────────────────────────────────
   const handleGoogle = async () => {
     clear();
     setLoading(true);
+    manualLoginInProgress.current = true;
     try {
       await signInWithPopup(auth, googleProvider);
-      const res = await API.post('/auth/login');
-      localStorage.setItem('gg_user', JSON.stringify(res.data.user));
-      navigate('/dashboard');
-    } catch (err) {
-      if (err.response?.status === 404) {
-        setError('No account found. Please sign up first.');
-      } else if (err.code === 'auth/popup-closed-by-user') {
-        setError('Google sign-in was cancelled.');
-      } else {
-        setError('Google sign-in failed. Please try again.');
+      await auth.currentUser.getIdToken(true);
+
+      try {
+        const res = await API.post('/auth/login');
+        setUser(res.data.user);
+        localStorage.setItem('gg_user', JSON.stringify(res.data.user));
+        navigate('/dashboard');
+      } catch (err) {
+        if (err.response?.status === 404) {
+          localStorage.setItem('gg_google_signup', JSON.stringify({
+            email:    auth.currentUser.email,
+            fullName: auth.currentUser.displayName || '',
+          }));
+          navigate('/complete-profile');
+        } else {
+          setError(err.response?.data?.error || 'Login failed. Please try again.');
+          await signOut(auth);
+        }
       }
+    } catch (err) {
+      if (err.code === 'auth/popup-closed-by-user') setError('Google sign-in was cancelled.');
+      else setError('Google sign-in failed. Please try again.');
     }
     setLoading(false);
+    manualLoginInProgress.current = false;
   };
 
   const passChecks = [
-    { check: suPass.length >= 8,   label: '8+ chars' },
-    { check: /[A-Z]/.test(suPass), label: 'Uppercase' },
-    { check: /[0-9]/.test(suPass), label: 'Number' },
+    { check: suPass.length >= 8,                  label: '8+ chars'     },
+    { check: /[a-z]/.test(suPass),               label: 'Lowercase'    },
+    { check: /[A-Z]/.test(suPass),               label: 'Uppercase'    },
+    { check: /[0-9]/.test(suPass),               label: 'Number'       },
+    { check: /[^a-zA-Z0-9\s]/.test(suPass),      label: 'Symbol (!@#)' },
     { check: !/\s/.test(suPass) && suPass.length > 0, label: 'No spaces' },
   ];
+
+  const strength = getPasswordStrength(suPass);
 
   return (
     <div className="min-h-screen flex" style={{ background: '#0f0f0f' }}>
@@ -217,7 +240,7 @@ export default function AuthPage() {
           <p className="text-lg leading-relaxed max-w-md" style={{ color: '#888' }}>
             Pakistan's first freelancing platform built exclusively for
             university students. Find gigs, build your portfolio, and
-            get paid — all around your schedule.
+            get paid all around your schedule.
           </p>
         </div>
         <div className="flex gap-12">
@@ -246,12 +269,12 @@ export default function AuthPage() {
             </h2>
             <p style={{ color: '#666', fontSize: '0.9rem' }}>
               {tab === 'signin'
-                ? 'Sign in to your Grade & Grind account'
+                ? 'Sign in to your Grade and Grind account'
                 : 'Create your free student or client account'}
             </p>
           </div>
 
-          {/* tabs */}
+          {/* TABS */}
           <div className="flex rounded-2xl p-1 mb-8 gap-1"
             style={{ background: '#1a1a1a', border: '1px solid #2a2a2a' }}>
             {['signin', 'signup'].map(t => (
@@ -282,7 +305,7 @@ export default function AuthPage() {
             <form onSubmit={forgotMode ? handleForgot : handleSignIn}>
               {forgotMode && (
                 <p className="text-sm mb-4" style={{ color: '#888' }}>
-                  Enter your email and we'll send a password reset link.
+                  Enter your email and we will send a password reset link.
                 </p>
               )}
               <div className="mb-4">
@@ -319,13 +342,13 @@ export default function AuthPage() {
               <button type="submit" disabled={loading}
                 className="w-full py-4 rounded-xl font-bold text-base mb-4 transition-all"
                 style={{ background: '#f59e0b', color: '#000', opacity: loading ? 0.8 : 1 }}>
-                {loading ? 'Please wait...' : forgotMode ? 'Send Reset Link' : 'Sign In →'}
+                {loading ? 'Please wait...' : forgotMode ? 'Send Reset Link' : 'Sign In'}
               </button>
               {forgotMode ? (
                 <button type="button" onClick={() => { setForgotMode(false); clear(); }}
                   className="w-full py-3 rounded-xl text-sm font-medium"
                   style={{ background: 'transparent', border: '1px solid #2a2a2a', color: '#666' }}>
-                  ← Back to Sign In
+                  Back to Sign In
                 </button>
               ) : (
                 <>
@@ -342,8 +365,8 @@ export default function AuthPage() {
               {/* role selector */}
               <div className="grid grid-cols-2 gap-3 mb-6">
                 {[
-                  { value: 'student', icon: '🎓', title: 'Student', desc: 'Find & complete gigs' },
-                  { value: 'client',  icon: '💼', title: 'Client',  desc: 'Post gigs & hire' },
+                  { value: 'student', icon: '🎓', title: 'Student', desc: 'Find and complete gigs' },
+                  { value: 'client',  icon: '💼', title: 'Client',  desc: 'Post gigs and hire' },
                 ].map(r => (
                   <button key={r.value} type="button" onClick={() => setRole(r.value)}
                     className="p-4 rounded-2xl text-center transition-all duration-200"
@@ -360,41 +383,29 @@ export default function AuthPage() {
                 ))}
               </div>
 
-              {/* name */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div>
-                  <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>
-                    FIRST NAME
-                  </label>
-                  <InputField value={firstName} onChange={e => setFirstName(e.target.value)}
-                    placeholder="Ali" required />
+                  <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>FIRST NAME</label>
+                  <InputField value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Ali" required />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>
-                    LAST NAME
-                  </label>
-                  <InputField value={lastName} onChange={e => setLastName(e.target.value)}
-                    placeholder="Khan" required />
+                  <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>LAST NAME</label>
+                  <InputField value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Khan" required />
                 </div>
               </div>
 
-              {/* email */}
               <div className="mb-4">
                 <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>
                   {role === 'student' ? 'UNIVERSITY EMAIL' : 'EMAIL ADDRESS'}
                 </label>
                 <InputField type="email" value={suEmail} onChange={e => setSuEmail(e.target.value)}
-                  placeholder={role === 'student' ? 'you@lhr.nu.edu.pk' : 'you@company.com'}
-                  required />
+                  placeholder={role === 'student' ? 'you@lhr.nu.edu.pk' : 'you@company.com'} required />
               </div>
 
-              {/* student-only */}
               {role === 'student' && (
                 <>
                   <div className="mb-4">
-                    <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>
-                      UNIVERSITY
-                    </label>
+                    <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>UNIVERSITY</label>
                     <select value={university} onChange={e => setUniversity(e.target.value)} required
                       className="w-full px-4 py-3 rounded-xl text-sm outline-none"
                       style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: university ? '#fff' : '#555' }}>
@@ -410,40 +421,65 @@ export default function AuthPage() {
                     </label>
                     <InputField value={phone} onChange={e => setPhone(e.target.value)} placeholder="03001234567" />
                     {phone && !/^03\d{9}$/.test(phone) && (
-                      <p className="text-xs mt-1" style={{ color: '#ff8090' }}>
-                        Must be 11 digits starting with 03
-                      </p>
+                      <p className="text-xs mt-1" style={{ color: '#ff8090' }}>Must be 11 digits starting with 03</p>
                     )}
                   </div>
                 </>
               )}
 
-              {/* password */}
               <div className="mb-6">
-                <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>
-                  PASSWORD
-                </label>
+                <label className="block text-xs font-semibold tracking-widest mb-2" style={{ color: '#555' }}>PASSWORD</label>
                 <div className="relative">
                   <InputField type={showPass ? 'text' : 'password'}
                     value={suPass} onChange={e => setSuPass(e.target.value)}
-                    placeholder="Min. 8 characters" required />
+                    placeholder="Min. 8 chars, uppercase, number, symbol" required />
                   <button type="button" onClick={() => setShowPass(!showPass)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-lg" style={{ color: '#555' }}>
                     {showPass ? '🙈' : '👁'}
                   </button>
                 </div>
+
+                {/* PASSWORD STRENGTH METER */}
                 {suPass.length > 0 && (
-                  <div className="mt-2 flex gap-2 flex-wrap">
-                    {passChecks.map(({ check, label }) => (
-                      <span key={label} className="text-xs px-2 py-0.5 rounded-full"
-                        style={{
-                          background: check ? '#22d3a515' : '#ff5e7815',
+                  <div style={{ marginTop: '10px' }}>
+                    {/* strength bar segments */}
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '7px' }}>
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} style={{
+                          flex: 1, height: '4px', borderRadius: '2px',
+                          background: i <= strength.score ? strength.color : '#2a2a2a',
+                          transition: 'background 0.25s',
+                        }} />
+                      ))}
+                    </div>
+
+                    {/* strength label */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#555' }}>Password strength</span>
+                      {strength.label && (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: strength.color }}>
+                          {strength.label}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* requirement chips */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                      {passChecks.map(({ check, label }) => (
+                        <span key={label} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '4px',
+                          padding: '3px 9px', borderRadius: '20px',
+                          fontSize: '0.69rem', fontWeight: 600,
+                          background: check ? '#22d3a512' : '#ff5e7810',
                           color:      check ? '#22d3a5'   : '#ff8090',
-                          border:     `1px solid ${check ? '#22d3a530' : '#ff5e7830'}`,
+                          border:     `1px solid ${check ? '#22d3a528' : '#ff5e7820'}`,
+                          transition: 'all 0.2s',
                         }}>
-                        {check ? '✓' : '✗'} {label}
-                      </span>
-                    ))}
+                          <span>{check ? '✓' : '✗'}</span>
+                          {label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -451,7 +487,7 @@ export default function AuthPage() {
               <button type="submit" disabled={loading}
                 className="w-full py-4 rounded-xl font-bold text-base mb-4 transition-all"
                 style={{ background: '#f59e0b', color: '#000', opacity: loading ? 0.8 : 1 }}>
-                {loading ? 'Creating account...' : 'Create Account →'}
+                {loading ? 'Creating account...' : 'Create Account'}
               </button>
               <Divider />
               <GoogleBtn onClick={handleGoogle} loading={loading} />

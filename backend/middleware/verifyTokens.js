@@ -19,14 +19,19 @@ const verifyToken = async (req, res, next) => {
     try {
       decoded = await admin.auth().verifyIdToken(token);
     } catch {
-      return res.status(403).json({ error: 'invalid or expired token. please log in again.' });
+      return res.status(401).json({ error: 'invalid or expired token. please log in again.' });
+    }
+
+    // FIX: check email is verified before allowing access to any protected route
+    if (!decoded.email_verified) {
+      return res.status(403).json({ error: 'please verify your email before accessing this resource.' });
     }
 
     // get user role and id from our database
     const pool   = await poolPromise;
     const result = await pool.request()
       .input('email', sql.NVarChar, decoded.email)
-      .query(`select UserID, Role, IsBanned from Users where Email = @email`);
+      .query(`select UserID, Role, Email, IsBanned from Users where Email = @email`);
 
     const user = result.recordset[0];
 
@@ -40,7 +45,7 @@ const verifyToken = async (req, res, next) => {
     // attach to request — available in all controllers as req.user
     req.user = {
       id:    user.UserID,
-      email: decoded.email,
+      email: user.Email,
       role:  user.Role,
     };
 

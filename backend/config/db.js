@@ -15,11 +15,12 @@ const config = {
 const poolPromise = new sql.ConnectionPool(config)
   .connect()
   .then(pool => {
-    console.log('connected to Grand & Grind DB');
+    console.log('connected to Grade & Grind DB');
     return pool;
   })
   .catch(err => {
     console.error('db connection failed:', err.message);
+    process.exit(1);  
   });
 
 module.exports = { sql, poolPromise };

@@ -6,11 +6,11 @@ const multer   = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const { cloudinary }        = require('../../config/cloudinary');
 const { verifyToken }       = require('../../middleware/verifyTokens');
-const { roleGuard }         = require('../../middleware/roleGaurd');
-
+const { roleGuard }         = require('../../middleware/roleGuard');
 const {
   getMyProfile,
   getProfile,
+  browseStudents,
   updateProfile,
   togglePublish,
   uploadCV,
@@ -21,7 +21,6 @@ const {
 
 // ─── CLOUDINARY STORAGE ───────────────────────────────────────────────────────
 
-// profile picture storage
 const profilePicStorage = new CloudinaryStorage({
   cloudinary,
   params: {
@@ -31,21 +30,20 @@ const profilePicStorage = new CloudinaryStorage({
   },
 });
 
-// cv storage — pdf only, raw delivery so it downloads properly
 const cvStorage = new CloudinaryStorage({
   cloudinary,
   params: {
-    folder:        'gradeandgrind/cvs',
+    folder:          'gradeandgrind/cvs',
     allowed_formats: ['pdf'],
-    resource_type: 'raw',
-    format:        'pdf',
+    resource_type:   'raw',
+    format:          'pdf',
   },
 });
 
 const uploadProfilePic = multer({ storage: profilePicStorage });
 const uploadCVFile     = multer({
   storage: cvStorage,
-  limits:  { fileSize: 5 * 1024 * 1024 }, // 5mb max
+  limits:  { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
       cb(null, true);
@@ -57,14 +55,18 @@ const uploadCVFile     = multer({
 
 // ─── ROUTES ───────────────────────────────────────────────────────────────────
 
-// GET /api/profile/me — student views own profile (must be logged in)
+// NOTE: /browse and /me must come before /:userID to avoid being matched as a userID
+
+// GET /api/profile/browse — clients browse all published student profiles
+router.get('/browse', verifyToken, browseStudents);
+
+// GET /api/profile/me — student views own profile
 router.get('/me', verifyToken, getMyProfile);
 
-// GET /api/profile/:userID — view a student profile
-// clients see published only, owner+admin see draft too
+// GET /api/profile/:userID — view any student profile (published or draft based on role)
 router.get('/:userID', verifyToken, getProfile);
 
-// PUT /api/profile/me — update profile + skills (student only)
+// PUT /api/profile/me — update profile and skills (student only)
 router.put('/me',
   verifyToken,
   roleGuard('student'),
@@ -75,23 +77,20 @@ router.put('/me',
 // PATCH /api/profile/me/publish — publish or unpublish (student only)
 router.patch('/me/publish', verifyToken, roleGuard('student'), togglePublish);
 
-// POST /api/profile/me/cv — upload cv pdf (student only)
+// POST /api/profile/me/cv — upload CV pdf (student only)
 router.post('/me/cv',
   verifyToken,
   roleGuard('student'),
   (req, res, next) => {
     uploadCVFile.single('cv')(req, res, (err) => {
-      if (err) {
-        // handle multer errors (file type, size)
-        return res.status(400).json({ error: err.message });
-      }
+      if (err) return res.status(400).json({ error: err.message });
       next();
     });
   },
   uploadCV
 );
 
-// DELETE /api/profile/me/cv — remove cv (student only)
+// DELETE /api/profile/me/cv — remove CV (student only)
 router.delete('/me/cv', verifyToken, roleGuard('student'), deleteCV);
 
 // POST /api/profile/me/skills — add a skill (student only)

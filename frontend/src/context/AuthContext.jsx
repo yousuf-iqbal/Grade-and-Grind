@@ -1,5 +1,8 @@
 // src/context/AuthContext.jsx
-import { createContext, useContext, useEffect, useState } from 'react';
+// global auth state — wraps entire app
+// handles: login state, token refresh, auto-register after email verification
+
+import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import API from '../api/axios';
@@ -10,23 +13,36 @@ export const AuthProvider = ({ children }) => {
   const [user,    setUser]    = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // flag to prevent AuthContext from interfering while a manual login/signup is in progress
+  // set to true during handleGoogle / handleSignIn in AuthPage
+  const manualLoginInProgressRef = useRef(false);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      // only call our backend if firebase user exists AND email is verified
+      // if a manual login is in progress, let that handle navigation
+      // AuthContext will pick up the state after it finishes
+      if (manualLoginInProgressRef.current) {
+        setLoading(false);
+        return;
+      }
+
       if (firebaseUser && firebaseUser.emailVerified) {
         try {
+          // force fresh token — fixes stale emailVerified after clicking link
+          // and ensures Google token is valid
+          await firebaseUser.getIdToken(true);
+
           const res = await API.post('/auth/login');
           setUser(res.data.user);
         } catch (err) {
-          // 404 means registered in firebase but not in our DB yet (edge case)
-          // 403 means banned or unverified
-          console.error('auth context login error:', err.response?.data?.error);
+          // 404 = firebase account exists but no DB profile yet
+          // this happens for new Google users — CompleteProfilePage handles it
           setUser(null);
         }
       } else {
-        // not logged in, or email not verified yet
         setUser(null);
       }
+
       setLoading(false);
     });
 
@@ -34,7 +50,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading }}>
+    <AuthContext.Provider value={{ user, setUser, loading, manualLoginInProgressRef }}>
       {children}
     </AuthContext.Provider>
   );
