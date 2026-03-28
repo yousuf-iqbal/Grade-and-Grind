@@ -5,12 +5,13 @@ require('dotenv').config();
 
 require('./config/db');
 
-const authRoutes = require('./features/auth/authRoutes');
+const authRoutes    = require('./features/auth/authRoutes');
+const profileRoutes = require('./features/studentProfile/studProfRoutes');
+const gigRoutes     = require('./features/gigs/gigRoutes');
 
-// future routes — uncomment as each feature is built:
-// const gigRoutes         = require('./features/gigs/gigRoutes');
+
+// future routes uncomment as each feature is built:
 // const applicationRoutes = require('./features/applications/applicationRoutes');
-// const profileRoutes     = require('./features/profile/profileRoutes');
 // const walletRoutes      = require('./features/wallet/walletRoutes');
 // const reviewRoutes      = require('./features/reviews/reviewRoutes');
 // const leaderboardRoutes = require('./features/leaderboard/leaderboardRoutes');
@@ -20,11 +21,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/auth', authRoutes);
+app.use('/api/auth',    authRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/gigs',    gigRoutes);
 
-// app.use('/api/gigs',         gigRoutes);
+
 // app.use('/api/applications', applicationRoutes);
-// app.use('/api/profile',      profileRoutes);
 // app.use('/api/wallet',       walletRoutes);
 // app.use('/api/reviews',      reviewRoutes);
 // app.use('/api/leaderboard',  leaderboardRoutes);

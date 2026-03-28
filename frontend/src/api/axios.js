@@ -6,6 +6,7 @@ const API = axios.create({
   baseURL: 'http://localhost:4000/api',
 });
 
+// attach firebase token to every request automatically
 API.interceptors.request.use(async (config) => {
   const user = auth.currentUser;
   if (user) {
