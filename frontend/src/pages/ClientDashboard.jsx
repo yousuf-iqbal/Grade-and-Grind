@@ -1,11 +1,14 @@
 // src/pages/ClientDashboard.jsx
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import API from '../api/axios';
 import { auth } from '../config/firebase';
 import { signOut } from 'firebase/auth';
 import PostGigModal from '../components/PostGigModal';
 import ApplicationsModal from '../components/ApplicationsModal';
+import GigWorkModal from '../components/GigWorkModal';
+import NotificationBell from '../components/NotificationBell';
 
 const STATUS_COLORS = {
   open:        { bg: '#0c1f17', color: '#34d399', border: '#064e3b' },
@@ -31,6 +34,7 @@ function StatusPill({ status }) {
 
 export default function ClientDashboard() {
   const { user, setUser }  = useAuth();
+  const navigate           = useNavigate();
   const [gigs,             setGigs]             = useState([]);
   const [students,         setStudents]         = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
@@ -40,6 +44,7 @@ export default function ClientDashboard() {
   const [showPostModal,    setShowPostModal]    = useState(false);
   const [editGig,          setEditGig]          = useState(null);
   const [appsModal,        setAppsModal]        = useState(null);
+  const [workModal,        setWorkModal]        = useState(null);  // US-12
   const [toast,            setToast]            = useState(null);
   const [activeTab,        setActiveTab]        = useState('gigs');
 
@@ -155,6 +160,7 @@ export default function ClientDashboard() {
             <span style={st.chipName}>{user?.fullName?.split(' ')[0]}</span>
             <span style={st.chipRoleClient}>Client</span>
           </div>
+          <button onClick={() => navigate("/leaderboard")} style={{ background: "transparent", border: "1px solid #f59e0b44", color: "#f59e0b", borderRadius: "8px", padding: "7px 14px", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}>🏆 Leaderboard</button>
           <button style={st.signOutBtn} onClick={handleSignOut}>Sign out</button>
         </div>
       </nav>
@@ -249,6 +255,33 @@ export default function ClientDashboard() {
                       {gig.TotalApplications > 0 && (
                         <button style={st.viewAppsBtn} onClick={() => setAppsModal(gig.GigID)}>
                           View Applicants
+                        </button>
+                      )}
+
+                      {/* US-12: Manage Work button for active/submitted/completed gigs */}
+                      {['in_progress', 'submitted', 'revision', 'completed'].includes(gig.Status) && (
+                        <button
+                          style={{
+                            ...st.viewAppsBtn,
+                            background: gig.Status === 'completed' ? '#0f172a'
+                                      : gig.Status === 'submitted' ? '#1a1035'
+                                      : gig.Status === 'revision'  ? '#1c0f07'
+                                      : '#1a1a1a',
+                            color: gig.Status === 'completed' ? '#60a5fa'
+                                 : gig.Status === 'submitted' ? '#a78bfa'
+                                 : gig.Status === 'revision'  ? '#fb923c'
+                                 : '#f59e0b',
+                            borderColor: gig.Status === 'completed' ? '#1e3a5f'
+                                       : gig.Status === 'submitted' ? '#4c1d95'
+                                       : gig.Status === 'revision'  ? '#7c2d12'
+                                       : '#f59e0b33',
+                          }}
+                          onClick={() => setWorkModal(gig)}
+                        >
+                          {gig.Status === 'completed' ? '✓ View Completion'
+                         : gig.Status === 'submitted' ? '● Review Submission'
+                         : gig.Status === 'revision'  ? '↺ Revision Pending'
+                         : '⚙ Manage Work'}
                         </button>
                       )}
 
@@ -374,6 +407,16 @@ export default function ClientDashboard() {
           gigID={appsModal}
           onClose={() => setAppsModal(null)}
           onAccepted={() => { setAppsModal(null); loadAll(); showToast('Applicant accepted!'); }}
+        />
+      )}
+      {workModal && (
+        <GigWorkModal
+          gigID={workModal.GigID}
+          gigTitle={workModal.Title}
+          userRole="client"
+          gigStatus={workModal.Status}
+          onClose={() => setWorkModal(null)}
+          onUpdated={() => { loadAll(); }}
         />
       )}
 

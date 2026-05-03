@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import API from '../api/axios';
 import { auth } from '../config/firebase';
 import { signOut } from 'firebase/auth';
+import GigWorkModal from '../components/GigWorkModal';
+import NotificationBell from '../components/NotificationBell';
 
 const CATEGORIES = ['All', 'Development', 'Design', 'Writing', 'Data', 'Marketing', 'Video', 'Other'];
 
@@ -66,6 +68,7 @@ export default function StudentDashboard() {
   const [profile,         setProfile]         = useState(null);
   const [loading,         setLoading]         = useState(true);
   const [applyModal,      setApplyModal]       = useState(null);
+  const [workModal,       setWorkModal]        = useState(null);  // US-12
   const [coverLetter,     setCoverLetter]      = useState('');
   const [submitting,      setSubmitting]       = useState(false);
   const [toast,           setToast]            = useState(null);
@@ -163,6 +166,7 @@ export default function StudentDashboard() {
             <span style={st.chipName}>{user?.fullName?.split(' ')[0]}</span>
             <span style={st.chipRole}>Student</span>
           </div>
+          <button onClick={() => navigate("/leaderboard")} style={{ background: "transparent", border: "1px solid #f59e0b44", color: "#f59e0b", borderRadius: "8px", padding: "7px 14px", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}>🏆 Leaderboard</button>
           <button style={st.signOutBtn} onClick={handleSignOut}>Sign out</button>
         </div>
       </nav>
@@ -281,12 +285,55 @@ export default function StudentDashboard() {
                       Withdraw
                     </button>
                   )}
+                  {/* US-12: Submit Work button when gig is in_progress or revision */}
+                  {app.ApplicationStatus === 'accepted' && ['in_progress', 'revision', 'submitted', 'completed'].includes(app.GigStatus) && (
+                    <button
+                      style={{
+                        ...st.applyBtn,
+                        marginTop: 0,
+                        background: app.GigStatus === 'completed' ? '#0f172a'
+                                  : app.GigStatus === 'submitted' ? '#1a1035'
+                                  : app.GigStatus === 'revision'  ? '#1c0f07'
+                                  : '#f59e0b',
+                        color: app.GigStatus === 'completed' ? '#60a5fa'
+                             : app.GigStatus === 'submitted' ? '#a78bfa'
+                             : app.GigStatus === 'revision'  ? '#fb923c'
+                             : '#000',
+                        border: app.GigStatus === 'completed' ? '1px solid #1e3a5f'
+                              : app.GigStatus === 'submitted' ? '1px solid #4c1d95'
+                              : app.GigStatus === 'revision'  ? '1px solid #7c2d12'
+                              : 'none',
+                      }}
+                      onClick={() => setWorkModal(app)}
+                    >
+                      {app.GigStatus === 'completed' ? '✓ View Completion'
+                     : app.GigStatus === 'submitted' ? '↑ Submitted — View'
+                     : app.GigStatus === 'revision'  ? '⚠ Revision Requested'
+                     : '↑ Submit Work'}
+                    </button>
+                  )}
                 </div>
               </div>
             ))
           )}
         </div>
       </div>
+
+      {/* WORK MODAL — US-12 */}
+      {workModal && (
+        <GigWorkModal
+          gigID={workModal.GigID}
+          gigTitle={workModal.GigTitle}
+          userRole="student"
+          gigStatus={workModal.GigStatus}
+          currentUserID={user?.id}
+          onClose={() => setWorkModal(null)}
+          onUpdated={async () => {
+            const appsRes = await API.get('/gigs/applications/mine');
+            setMyApplications(appsRes.data.applications);
+          }}
+        />
+      )}
 
       {/* APPLY MODAL */}
       {applyModal && (

@@ -6,6 +6,7 @@ import StudentDashboard    from './pages/StudentDashboard';
 import ClientDashboard     from './pages/ClientDashboard';
 import CompleteProfilePage from './pages/CompleteProfilePage';
 import StudentProfilePage  from './pages/StudentProfilePage';
+import LeaderboardPage from "./pages/LeaderboardPage";
 
 // ── loading screen ────────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -74,7 +75,12 @@ export default function App() {
           <Route path="/profile/edit" element={
             <ProtectedRoute allowedRole="student"><StudentProfilePage /></ProtectedRoute>
           } />
-
+          {
+            <Route path="/leaderboard"        element={<ProtectedRoute><LeaderboardPage /></ProtectedRoute>} />
+          }
+          {
+            <Route path="/complete-profile"   element={<CompleteProfilePage />} />}
+            
           {/* catch-all → dashboard if logged in, auth if not */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

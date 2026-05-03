@@ -5,9 +5,14 @@ require('dotenv').config();
 
 require('./config/db');
 
+require('./config/mailer');
+
 const authRoutes    = require('./features/auth/authRoutes');
 const profileRoutes = require('./features/studentProfile/studProfRoutes');
 const gigRoutes     = require('./features/gigs/gigRoutes');
+const notifRoutes   = require('./features/notifications/notifRoutes');
+const reviewRoutes     = require('./features/reviews/reviewRoutes'); 
+const leaderboardRoutes = require('./features/leaderboard/leaderboardRoutes'); 
 
 
 // future routes uncomment as each feature is built:
@@ -24,6 +29,9 @@ app.use(express.json());
 app.use('/api/auth',    authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/gigs',    gigRoutes);
+app.use('/api/notifications', notifRoutes);   
+app.use('/api/reviews',       reviewRoutes);
+app.use('/api/leaderboard',   leaderboardRoutes);
 
 
 // app.use('/api/applications', applicationRoutes);
